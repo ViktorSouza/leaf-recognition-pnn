@@ -1,0 +1,56 @@
+services:
+  api:
+    build:
+      context: .
+      target: api
+    ports:
+      - '${API_PORT:-3000}:3000'
+    working_dir: /app
+    environment:
+      DATABASE_URL: postgresql+psycopg2://leaf-recognition:leaf-recognition@db:5432/leaf-recognition
+      APP_ENV: ${APP_ENV:-local}
+      SERVICE_NAME: ${SERVICE_NAME:-leaf-recognition-api}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-default_token}
+      LEAF_FEATURES_PATH: /model/leaf_features.npy
+      BANKSLIP_API_URL: ${BANKSLIP_API_URL:-http://mock:1080}
+      BANKSLIP_API_INTERNAL_TOKEN: ${BANKSLIP_API_INTERNAL_TOKEN:-default_token}
+      BANKSLIP_API_TIMEOUT: ${BANKSLIP_API_TIMEOUT:-5}
+    volumes:
+      - ./src:/app
+      - ./notebooks/leaf_features.npy:/model/leaf_features.npy:ro
+    command:
+      uvicorn app:app --host 0.0.0.0 --port 3000 --no-server-header --reload
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'python -c ''import urllib.request;
+          urllib.request.urlopen("http://localhost:3000/health_check")''',
+        ]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+    depends_on:
+      db:
+        condition: service_healthy
+
+  mock:
+    image: mockserver/mockserver:mockserver-5.11.1
+    command: -logLevel ERROR -serverPort 1080 -proxyRemotePort 1080
+    ports:
+      - '${MOCK_PORT:-1080}:1080'
+
+  db:
+    build: ./database/.
+    environment:
+      POSTGRES_USER: leaf-recognition
+      POSTGRES_PASSWORD: leaf-recognition
+      POSTGRES_DB: leaf-recognition
+    ports:
+      - '${DB_PORT:-5432}:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U leaf-recognition -d leaf-recognition']
+      interval: 3s
+      timeout: 3s
+      retries: 20
