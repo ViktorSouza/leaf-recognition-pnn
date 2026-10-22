@@ -5,6 +5,7 @@ services:
       target: api
     ports:
       - '${API_PORT:-3000}:3000'
+    working_dir: /app
     environment:
       DATABASE_URL: postgresql+psycopg2://leaf-recognition:leaf-recognition@db:5432/leaf-recognition
       APP_ENV: ${APP_ENV:-local}
