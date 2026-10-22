@@ -182,16 +182,20 @@ jupyter notebook notebooks/leaf_recognition_pnn.ipynb
 ### 5. Executar a API
 
 A API recebe uma imagem JPEG ou PNG no campo `image` e retorna a espécie
-prevista. O arquivo `notebooks/leaf_features.npy` (1.907 linhas por 12 features)
-é necessário para ajustar o escalonamento, a PCA e a PNN ao iniciar a aplicação.
-Ele contém as features antes da PCA, calculadas no notebook
-`notebooks/parte.ipynb`. Se o arquivo ainda não existir, execute a extração
-nesse notebook e salve a matriz `X` em `notebooks/leaf_features.npy` com
-`np.save("notebooks/leaf_features.npy", X)`.
+prevista. Ao iniciar, se `data/leaf_features.npy` ainda não existir, a aplicação
+extrai automaticamente as 12 features das 1.907 imagens JPEG em `Leaves/` e
+salva a matriz para reutilização nas próximas inicializações. As imagens devem
+ser nomeadas pelos índices Flavia esperados, como no notebook `parte.ipynb`.
+O caminho do dataset pode ser alterado com `LEAF_IMAGES_PATH`; o local do
+artefato, com `LEAF_FEATURES_PATH`. A primeira inicialização pode demorar
+enquanto as imagens são processadas. Se as imagens não estiverem disponíveis ou
+não corresponderem aos índices esperados, a API interrompe a inicialização com
+uma mensagem de erro; o dataset não é baixado automaticamente.
 
 Com Docker Compose:
 
 ```bash
+# Coloque o dataset Flavia extraído em ./Leaves antes de iniciar
 docker compose up --build api
 ```
 
@@ -200,7 +204,8 @@ repositório:
 
 ```bash
 pip install -r requirements.txt
-PYTHONPATH=src LEAF_FEATURES_PATH=notebooks/leaf_features.npy \
+PYTHONPATH=src LEAF_FEATURES_PATH=data/leaf_features.npy \
+LEAF_IMAGES_PATH=Leaves \
 INTERNAL_TOKEN=default_token uvicorn app:app --app-dir src --host 0.0.0.0 --port 3000
 ```
 
@@ -216,6 +221,7 @@ curl -X POST http://localhost:3000/predict \
 A resposta contém o rótulo Flavia, o nome da espécie e a confiança normalizada
 entre as ativações da PNN. Imagens devem mostrar uma folha escura sobre fundo
 claro, como no dataset usado para gerar as features.
+No Compose, o arquivo gerado fica no volume persistente `leaf-model-data`.
 Na inicialização, a API ajusta o escalonamento e a PCA e treina a PNN com as
 1.907 amostras disponíveis. A acurácia descrita anteriormente é do protocolo
 de validação do notebook, que mantém 320 amostras separadas para teste.

@@ -12,12 +12,14 @@ services:
       SERVICE_NAME: ${SERVICE_NAME:-leaf-recognition-api}
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-default_token}
       LEAF_FEATURES_PATH: /model/leaf_features.npy
+      LEAF_IMAGES_PATH: /dataset
       BANKSLIP_API_URL: ${BANKSLIP_API_URL:-http://mock:1080}
       BANKSLIP_API_INTERNAL_TOKEN: ${BANKSLIP_API_INTERNAL_TOKEN:-default_token}
       BANKSLIP_API_TIMEOUT: ${BANKSLIP_API_TIMEOUT:-5}
     volumes:
       - ./src:/app
-      - ./notebooks/leaf_features.npy:/model/leaf_features.npy:ro
+      - ./Leaves:/dataset:ro
+      - leaf-model-data:/model
     command:
       uvicorn app:app --host 0.0.0.0 --port 3000 --no-server-header --reload
     healthcheck:
@@ -54,3 +56,6 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+
+volumes:
+  leaf-model-data:

@@ -1,10 +1,13 @@
 import os
+import tempfile
 from pathlib import Path
 
 import numpy as np
 from numpy.typing import NDArray
 
 from models.leaf_pnn import LeafPNN
+from sources.leaf_feature_extractor import extract_leaf_features
+from utils.logger import get_logger
 
 PLANT_TYPES = {
     1: "Phyllostachys edulis (pubescent bamboo)",
@@ -75,6 +78,13 @@ PLANT_RANGES = (
     (3511, 3563, 32),
     (3566, 3621, 33),
 )
+FEATURE_COUNT = 12
+LOGGER = get_logger("LeafModelRepository")
+EXPECTED_IMAGE_INDICES = tuple(
+    index
+    for start, end, _ in PLANT_RANGES
+    for index in range(start, end + 1)
+)
 
 
 def _training_labels() -> NDArray[np.int64]:
@@ -88,16 +98,90 @@ def _training_labels() -> NDArray[np.int64]:
     )
 
 
-def load_classifier() -> LeafPNN:
-    default_path = (
-        Path(__file__).resolve().parents[2] / "notebooks" / "leaf_features.npy"
-    )
-    feature_path = Path(os.environ.get("LEAF_FEATURES_PATH", default_path))
-    if not feature_path.is_file():
+def ensure_training_features(
+    feature_path: Path,
+    images_path: Path,
+) -> Path:
+    if feature_path.is_file():
+        return feature_path
+
+    if not images_path.is_dir():
         raise FileNotFoundError(
-            f"Features de treino não encontradas em '{feature_path}'. "
-            "Configure LEAF_FEATURES_PATH para leaf_features.npy."
+            f"Features de treino não existem em '{feature_path}' e o diretório "
+            f"do dataset Flavia não foi encontrado em '{images_path}'. "
+            "Disponibilize as imagens JPEG nesse diretório ou configure "
+            "LEAF_IMAGES_PATH."
         )
+
+    LOGGER.info(
+        "Features de treino ausentes; extraindo %s imagens em %s.",
+        len(EXPECTED_IMAGE_INDICES),
+        images_path,
+    )
+    image_files = sorted(
+        (
+            path
+            for path in images_path.iterdir()
+            if path.is_file() and path.suffix.lower() == ".jpg"
+        ),
+        key=lambda path: path.name,
+    )
+    try:
+        image_indices = tuple(int(path.stem) for path in image_files)
+    except ValueError as error:
+        raise ValueError(
+            f"O dataset em '{images_path}' contém JPEGs cujo nome não é um "
+            "índice numérico Flavia."
+        ) from error
+
+    if image_indices != EXPECTED_IMAGE_INDICES:
+        raise ValueError(
+            f"O diretório '{images_path}' precisa conter as {len(EXPECTED_IMAGE_INDICES)} "
+            "imagens JPEG do Flavia, nomeadas pelos índices esperados. "
+            f"Foram encontradas {len(image_files)}."
+        )
+
+    features = np.vstack(
+        [extract_leaf_features(image_file.read_bytes()) for image_file in image_files]
+    )
+    expected_shape = (len(EXPECTED_IMAGE_INDICES), FEATURE_COUNT)
+    if features.shape != expected_shape or not np.isfinite(features).all():
+        raise ValueError(
+            "A extração do dataset Flavia produziu uma matriz inválida: "
+            f"esperado {expected_shape}, recebido {features.shape}."
+        )
+
+    feature_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=feature_path.parent,
+            prefix=f".{feature_path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            np.save(temporary_file, features, allow_pickle=False)
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+        os.replace(temporary_path, feature_path)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+    LOGGER.info("Features de treino salvas em %s.", feature_path)
+    return feature_path
+
+
+def load_classifier() -> LeafPNN:
+    repository_root = Path(__file__).resolve().parents[2]
+    default_path = repository_root / "data" / "leaf_features.npy"
+    feature_path = Path(os.environ.get("LEAF_FEATURES_PATH", default_path))
+    images_path = Path(
+        os.environ.get("LEAF_IMAGES_PATH", repository_root / "Leaves")
+    )
+    ensure_training_features(feature_path, images_path)
 
     raw_features = np.load(feature_path, allow_pickle=False)
     labels = _training_labels()
