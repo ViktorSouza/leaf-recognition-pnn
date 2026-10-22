@@ -133,13 +133,19 @@ branco:
 
 ```text
 leaf-recognition-pnn/
-├── data/                                # Diretório para armazenamento dos dados e features
-│   └── leaf_features_pca.npy           # Matriz com as features extraídas e projetadas em PCA
 ├── notebooks/
-│   └── leaf_recognition_pnn.ipynb      # Notebook com a implementação completa da PNN e análise
-├── .gitignore                           # Regras de exclusão do Git
-├── requirements.txt                     # Dependências do projeto
-└── README.md                            # Documentação do projeto
+│   ├── parte.ipynb                     # Extração de features de imagem e PCA
+│   ├── leaf_recognition_pnn.ipynb      # Experimento e avaliação da PNN
+│   └── leaf_features.npy               # Features de treino (gerado localmente)
+├── src/
+│   ├── app.py                          # Aplicação FastAPI
+│   ├── models/                         # Classificador PNN
+│   ├── repositories/                   # Carregamento do artefato de treino
+│   ├── schemas/                        # Contratos da API
+│   └── sources/                        # Extração de features das imagens
+├── tests/                              # Testes da API, da PNN e do extrator
+├── requirements.txt                    # Dependências de execução
+└── README.md                           # Documentação
 ```
 
 ---
@@ -173,6 +179,47 @@ pip install -r requirements.txt
 jupyter notebook notebooks/leaf_recognition_pnn.ipynb
 ```
 
+### 5. Executar a API
+
+A API recebe uma imagem JPEG ou PNG no campo `image` e retorna a espécie
+prevista. O arquivo `notebooks/leaf_features.npy` (1.907 linhas por 12 features)
+é necessário para ajustar o escalonamento, a PCA e a PNN ao iniciar a aplicação.
+Ele contém as features antes da PCA, calculadas no notebook
+`notebooks/parte.ipynb`. Se o arquivo ainda não existir, execute a extração
+nesse notebook e salve a matriz `X` em `notebooks/leaf_features.npy` com
+`np.save("notebooks/leaf_features.npy", X)`.
+
+Com Docker Compose:
+
+```bash
+docker compose up --build api
+```
+
+Sem Docker, instale as dependências e inicie o servidor a partir da raiz do
+repositório:
+
+```bash
+pip install -r requirements.txt
+PYTHONPATH=src LEAF_FEATURES_PATH=notebooks/leaf_features.npy \
+INTERNAL_TOKEN=default_token uvicorn app:app --app-dir src --host 0.0.0.0 --port 3000
+```
+
+A rota `/health_check` é pública. A rota `POST /predict` exige o header
+`INTERNAL-TOKEN` e uma imagem multipart no campo `image`:
+
+```bash
+curl -X POST http://localhost:3000/predict \
+  -H 'INTERNAL-TOKEN: default_token' \
+  -F 'image=@folha.jpg'
+```
+
+A resposta contém o rótulo Flavia, o nome da espécie e a confiança normalizada
+entre as ativações da PNN. Imagens devem mostrar uma folha escura sobre fundo
+claro, como no dataset usado para gerar as features.
+Na inicialização, a API ajusta o escalonamento e a PCA e treina a PNN com as
+1.907 amostras disponíveis. A acurácia descrita anteriormente é do protocolo
+de validação do notebook, que mantém 320 amostras separadas para teste.
+
 ---
 
 ## ️ Tecnologias Utilizadas
@@ -181,3 +228,4 @@ jupyter notebook notebooks/leaf_recognition_pnn.ipynb
 - **NumPy**: Operações vetoriais e matriciais de alta performance em C.
 - **Matplotlib**: Visualização de dados e gráficos de desempenho/erros.
 - **Jupyter Notebook**: Ambiente interativo de experimentação e análise.
+- **FastAPI**: API HTTP para classificar imagens de folhas.

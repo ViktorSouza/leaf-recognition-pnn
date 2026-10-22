@@ -13,7 +13,7 @@ WORKDIR /path
 COPY src /app
 
 FROM base AS api
-RUN chown -R user /app
+RUN mkdir -p /model && chown -R user /app /model
 USER user
 
 CMD uvicorn app:app --host 0.0.0.0 --port 3000 --no-server-header
