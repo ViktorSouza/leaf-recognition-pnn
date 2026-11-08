@@ -6,6 +6,8 @@ services:
     ports:
       - '${API_PORT:-3000}:3000'
     working_dir: /app
+    group_add:
+      - '${HOST_GID:-1000}'
     environment:
       DATABASE_URL: postgresql+psycopg2://leaf-recognition:leaf-recognition@db:5432/leaf-recognition
       APP_ENV: ${APP_ENV:-local}
@@ -13,11 +15,12 @@ services:
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-default_token}
       LEAF_FEATURES_PATH: /model/leaf_features.npy
       LEAF_IMAGES_PATH: /dataset
+      PYTHONPATH: /app/src
       BANKSLIP_API_URL: ${BANKSLIP_API_URL:-http://mock:1080}
       BANKSLIP_API_INTERNAL_TOKEN: ${BANKSLIP_API_INTERNAL_TOKEN:-default_token}
       BANKSLIP_API_TIMEOUT: ${BANKSLIP_API_TIMEOUT:-5}
     volumes:
-      - ./src:/app
+      - ./:/app
       - ./Leaves:/dataset:ro
       - leaf-model-data:/model
     command:

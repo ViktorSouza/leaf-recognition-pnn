@@ -9,8 +9,9 @@ ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 COPY requirements.txt /requirements.txt
 RUN pip install --upgrade pip && pip install -r /requirements.txt
 
-WORKDIR /path
-COPY src /app
+WORKDIR /app
+COPY ./ /app
+ENV PYTHONPATH=/app/src
 
 FROM base AS api
 RUN mkdir -p /model && chown -R user /app /model

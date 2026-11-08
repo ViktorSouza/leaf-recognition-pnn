@@ -10,6 +10,7 @@ from repositories.leaf_model_repository import load_classifier
 from schemas.prediction import PredictionResponse
 from sources.leaf_feature_extractor import InvalidLeafImage, extract_leaf_features
 from utils.logger import setup_logging
+from database import get_db
 
 MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024
 
@@ -37,6 +38,8 @@ def create_app() -> FastAPI:
     @application.get("/health_check")
     def health_check() -> dict[str, str]:
         return {"status": "ok"}
+
+    get_db()
 
     @application.post("/predict", response_model=PredictionResponse)
     def predict_leaf(
