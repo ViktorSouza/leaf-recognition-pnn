@@ -226,6 +226,21 @@ Na inicialização, a API ajusta o escalonamento e a PCA e treina a PNN com as
 1.907 amostras disponíveis. A acurácia descrita anteriormente é do protocolo
 de validação do notebook, que mantém 320 amostras separadas para teste.
 
+### Importar folhas e features no PostgreSQL
+
+Com o PostgreSQL ativo e as migrations aplicadas, importe as imagens do dataset:
+
+```bash
+docker compose exec api python scripts/import_leaves.py
+```
+
+O script calcula as 12 features para cada imagem, associa a folha à espécie
+Flavia correspondente e grava os registros em `leaf`, `specie` e
+`leaf_feature`. As imagens continuam em `./Leaves` (montadas no container em
+`/dataset`); `picture_url` guarda o caminho do arquivo, não os bytes da imagem.
+É seguro executar o script novamente: folhas existentes e suas features são
+atualizadas em vez de duplicadas.
+
 ---
 
 ## ️ Tecnologias Utilizadas
