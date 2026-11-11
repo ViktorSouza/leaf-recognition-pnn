@@ -79,82 +79,93 @@ def _get_image_files(images_path: Path) -> list[Path]:
     return image_files
 
 
-def _extract_dataset(
-    image_files: list[Path],
-) -> list[tuple[Path, int, tuple[float, ...]]]:
+def _persist_leaf(
+    image_file: Path,
+    label: int,
+    values: tuple[float, ...],
+) -> tuple[bool, bool]:
+    picture_path = image_file.as_posix()
+    specie_name = PLANT_TYPES[label]
+    with SessionLocal.begin() as session:
+        specie = session.scalar(select(Specie).where(Specie.name == specie_name))
+        created_specie = specie is None
+        if specie is None:
+            specie = Specie(name=specie_name, picture_url=picture_path)
+            session.add(specie)
+
+        leaf = session.scalar(
+            select(Leaf)
+            .where(Leaf.picture_url == picture_path)
+            .options(selectinload(Leaf.features))
+        )
+        created_leaf = leaf is None
+        if leaf is None:
+            leaf = Leaf(picture_url=picture_path, specie=specie)
+            session.add(leaf)
+        else:
+            leaf.specie = specie
+
+        existing_features = {feature.name: feature for feature in leaf.features}
+        for feature_name, value in zip(FEATURE_NAMES, values, strict=True):
+            feature = existing_features.pop(feature_name, None)
+            if feature is None:
+                leaf.features.append(LeafFeature(name=feature_name, value=value))
+            else:
+                feature.value = value
+        for obsolete_feature in existing_features.values():
+            leaf.features.remove(obsolete_feature)
+
+    return created_specie, created_leaf
+
+
+def _get_existing_picture_paths(image_files: list[Path]) -> set[str]:
+    picture_paths = [image_file.as_posix() for image_file in image_files]
+    if not picture_paths:
+        return set()
+
+    with SessionLocal() as session:
+        existing_paths = session.scalars(
+            select(Leaf.picture_url).where(Leaf.picture_url.in_(picture_paths))
+        )
+        return set(existing_paths)
+
+
+def _import_images(image_files: list[Path]) -> tuple[int, int]:
     image_labels = _image_label_map()
-    dataset: list[tuple[Path, int, tuple[float, ...]]] = []
+    created_species = 0
+    created_leaves = 0
+    existing_picture_paths = _get_existing_picture_paths(image_files)
+    skipped_leaves = 0
 
     for index, image_file in enumerate(image_files, start=1):
-        print(f"Extraindo para imagem {image_file}")
-        try:
-            features = extract_leaf_features(image_file.read_bytes())
-        except InvalidLeafImage as error:
-            raise ValueError(
-                f"Não foi possível extrair features de '{image_file}': {error}"
-            ) from error
+        if image_file.as_posix() in existing_picture_paths:
+            skipped_leaves += 1
+        else:
+            try:
+                features = extract_leaf_features(image_file.read_bytes())
+            except InvalidLeafImage as error:
+                raise ValueError(
+                    f"Não foi possível extrair features de '{image_file}': {error}"
+                ) from error
 
-        if features.shape != (len(FEATURE_NAMES),) or not np.isfinite(features).all():
-            raise ValueError(f"Features inválidas para a imagem '{image_file}'.")
+            if features.shape != (len(FEATURE_NAMES),) or not np.isfinite(
+                features
+            ).all():
+                raise ValueError(f"Features inválidas para a imagem '{image_file}'.")
 
-        dataset.append(
-            (
+            created_specie, created_leaf = _persist_leaf(
                 image_file,
                 image_labels[int(image_file.stem)],
                 tuple(float(value) for value in features),
             )
-        )
+            created_species += created_specie
+            created_leaves += created_leaf
+
         if index % 100 == 0 or index == len(image_files):
-            print(f"Features extraídas: {index}/{len(image_files)}")
+            print(f"Imagens verificadas: {index}/{len(image_files)}")
 
-    return dataset
-
-
-def _persist_dataset(
-    dataset: list[tuple[Path, int, tuple[float, ...]]],
-) -> tuple[int, int]:
-    created_species = 0
-    created_leaves = 0
-
-    with SessionLocal.begin() as session:
-        species_by_name = {
-            specie.name: specie for specie in session.scalars(select(Specie)).all()
-        }
-        leaves_by_path = {
-            leaf.picture_url: leaf
-            for leaf in session.scalars(
-                select(Leaf).options(selectinload(Leaf.features))
-            ).all()
-        }
-
-        for image_file, label, values in dataset:
-            specie_name = PLANT_TYPES[label]
-            picture_path = image_file.as_posix()
-            specie = species_by_name.get(specie_name)
-            if specie is None:
-                specie = Specie(name=specie_name, picture_url=picture_path)
-                species_by_name[specie_name] = specie
-                session.add(specie)
-                created_species += 1
-
-            leaf = leaves_by_path.get(picture_path)
-            if leaf is None:
-                leaf = Leaf(picture_url=picture_path, specie=specie)
-                leaves_by_path[picture_path] = leaf
-                session.add(leaf)
-                created_leaves += 1
-            else:
-                leaf.specie = specie
-
-            existing_features = {feature.name: feature for feature in leaf.features}
-            for feature_name, value in zip(FEATURE_NAMES, values, strict=True):
-                feature = existing_features.pop(feature_name, None)
-                if feature is None:
-                    leaf.features.append(LeafFeature(name=feature_name, value=value))
-                else:
-                    feature.value = value
-            for obsolete_feature in existing_features.values():
-                leaf.features.remove(obsolete_feature)
+    if skipped_leaves:
+        print(f"Imagens ignoradas por já estarem no banco: {skipped_leaves}")
 
     return created_species, created_leaves
 
@@ -164,12 +175,11 @@ def main() -> None:
     images_path = Path(os.getenv("LEAF_IMAGES_PATH", default_images_path))
     image_files = _get_image_files(images_path)
 
-    print(f"Extraindo features de {len(image_files)} imagens em {images_path}...")
-    dataset = _extract_dataset(image_files)
-    created_species, created_leaves = _persist_dataset(dataset)
+    print(f"Importando {len(image_files)} imagens de {images_path}...")
+    created_species, created_leaves = _import_images(image_files)
     print(
         "Importação concluída: "
-        f"{len(image_files)} imagens processadas, "
+        f"{len(image_files)} imagens verificadas, "
         f"{created_species} espécies e {created_leaves} folhas novas."
     )
 
