@@ -238,8 +238,10 @@ O script calcula as 12 features para cada imagem, associa a folha à espécie
 Flavia correspondente e grava os registros em `leaf`, `specie` e
 `leaf_feature`. As imagens continuam em `./Leaves` (montadas no container em
 `/dataset`); `picture_url` guarda o caminho do arquivo, não os bytes da imagem.
-É seguro executar o script novamente: folhas existentes e suas features são
-atualizadas em vez de duplicadas.
+Cada imagem é extraída e persistida em uma transação antes de iniciar a próxima.
+Se uma imagem falhar, as anteriores permanecem no banco; é seguro executar o
+script novamente, pois folhas existentes e suas features são atualizadas em vez
+de duplicadas.
 
 ---
 

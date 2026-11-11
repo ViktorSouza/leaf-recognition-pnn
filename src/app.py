@@ -24,9 +24,9 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
 def create_app() -> FastAPI:
     """Monta a aplicação FastAPI com o classificador de folhas."""
     application = FastAPI(
-        docs_url=None,
-        redoc_url=None,
-        openapi_url=None,
+        docs_url="/docs",
+        redoc_url="/redoc",
+        openapi_url="/openapi.json",
         lifespan=lifespan,
     )
     application.add_middleware(InternalTokenMiddleware)

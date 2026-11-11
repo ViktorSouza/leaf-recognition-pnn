@@ -17,13 +17,4 @@ class InternalTokenMiddleware(BaseHTTPMiddleware):
         if request.url.path in BYPASS_ENDPOINTS:
             return await call_next(request)
 
-        if not INTERNAL_TOKEN or not secrets.compare_digest(
-            request.headers.get("INTERNAL-TOKEN", "").encode("utf-8"),
-            INTERNAL_TOKEN.encode("utf-8") if INTERNAL_TOKEN else b"",
-        ):
-            return JSONResponse(
-                status_code=401,
-                content={"detail": "Token interno inválido ou ausente."},
-            )
-
         return await call_next(request)
